@@ -106,9 +106,17 @@ bash ~/nutrition-garmin-data/run_garmin_server.sh 2026-06-05  # fecha específic
 
 ---
 
-## Cron — ejecución automática
+## Cron — ejecución automática con timezone inteligente
 
-Corre todos los días a las **11pm hora Uruguay (02:00 UTC)**.
+El cron no corre a una hora UTC fija. En cambio, `garmin_cron_controller.py` corre **cada 30 minutos** y:
+
+1. Obtiene la última ubicación GPS de Garmin (lat/lon de la actividad más reciente con GPS)
+2. Detecta el timezone de esas coordenadas con `timezonefinder` (sin API, offline)
+3. Calcula la hora local actual en ese timezone
+4. Si la hora local está entre **22:15 y 22:45** y no corrió hoy → ejecuta el script y sube a Drive
+5. Si ya corrió hoy → sale sin hacer nada
+
+Esto significa que **si viajás a otro país y hacés una actividad con GPS, el script se ajusta automáticamente** a la hora local del nuevo lugar.
 
 Ver cron activo:
 ```bash
@@ -117,16 +125,23 @@ crontab -l
 
 Configuración actual:
 ```
-0 2 * * * /bin/bash /home/ubuntu/nutrition-garmin-data/run_garmin_server.sh >> /home/ubuntu/logs/garmin_cron.log 2>&1
+*/30 * * * * /usr/bin/python3 /home/ubuntu/nutrition-garmin-data/garmin_cron_controller.py >> /home/ubuntu/logs/garmin_cron.log 2>&1
 ```
 
-Editar horario:
+Ver log del controller:
 ```bash
-crontab -e
+tail -50 ~/logs/garmin_cron.log
 ```
 
-> **Nota de timezone:** El servidor corre en UTC. Uruguay es UTC-3, por eso 11pm Uruguay = 02:00 UTC.
-> No usar la timezone de Frankfurt aunque AWS diga que el servidor está ahí — el servidor está configurado en UTC.
+Correr manualmente (para testear):
+```bash
+python3 ~/nutrition-garmin-data/garmin_cron_controller.py
+```
+
+> **Nota:** Si querés forzar la ejecución aunque ya corrió hoy, borrá el lockfile:
+> ```bash
+> rm ~/logs/garmin_last_run.txt
+> ```
 
 ---
 

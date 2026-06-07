@@ -261,7 +261,7 @@ def build_garmin_context(r: dict) -> dict:
 
     # Fallback con body_battery list si stats no tiene
     if bb_start is None and isinstance(body_battery, list) and body_battery:
-        items = sorted(body_battery, key=lambda x: x[0] if isinstance(x, (list, tuple)) else x.get("startTimestampGMT", ""))
+        items = sorted(body_battery, key=lambda x: (x[0] if isinstance(x, (list, tuple)) else x.get("startTimestampGMT")) or "")
         first, last = items[0], items[-1]
         if isinstance(first, dict):
             bb_start = first.get("charged") or first.get("bodyBatteryLevel")

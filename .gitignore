@@ -1,0 +1,15 @@
+# Datos personales generados — no subir al repo
+garmin_*.json
+
+# Credenciales (por si alguien las pone acá por error)
+.env
+*.env
+secrets.*
+
+# macOS
+.DS_Store
+
+# Python
+__pycache__/
+*.pyc
+*.pyo

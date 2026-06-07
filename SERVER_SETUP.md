@@ -84,7 +84,7 @@ team_drive =
 Verificar acceso:
 ```bash
 rclone lsd gdrive:
-rclone lsd "gdrive:Development/nutrition-garmin-data"
+rclone lsd "gdrive:Salud/nutrition"
 ```
 
 ---

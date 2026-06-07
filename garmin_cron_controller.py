@@ -155,7 +155,7 @@ def main():
     json_file = SCRIPT_DIR / f"garmin_{run_date}.json"
     if json_file.exists():
         upload = subprocess.run(
-            ["rclone", "copy", str(json_file), "gdrive:Development/nutrition-garmin-data"],
+            ["rclone", "copy", str(json_file), "gdrive:Salud/nutrition"],
             capture_output=True, text=True,
         )
         if upload.returncode == 0:

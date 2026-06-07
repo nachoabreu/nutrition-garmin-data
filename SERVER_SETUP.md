@@ -1,0 +1,227 @@
+# Server Setup — nutrition-garmin-data
+
+Configuración del servidor AWS Lightsail para correr el extractor de datos Garmin diariamente y subir los JSON a Google Drive de forma automática.
+
+---
+
+## Servidor
+
+| Parámetro | Valor |
+|---|---|
+| Provider | AWS Lightsail |
+| IP | `63.178.52.9` |
+| OS | Ubuntu 22.04 |
+| Timezone | UTC |
+| Usuario | `ubuntu` |
+| SSH key | `~/.ssh/nacho-lightsail-operator-mac.pem` |
+
+Conectarse:
+```bash
+ssh lightsail-operator-dev
+# o directamente:
+ssh -i ~/.ssh/nacho-lightsail-operator-mac.pem ubuntu@63.178.52.9
+```
+
+---
+
+## Instalación
+
+### 1. Clonar el repo
+
+```bash
+cd ~
+git clone https://github.com/nachoabreu/nutrition-garmin-data.git
+```
+
+### 2. Instalar dependencia Python
+
+```bash
+python3 -m pip install garminconnect
+```
+
+### 3. Credenciales Garmin
+
+Crear `~/.garmin_env` con permisos 600 — **nunca subir al repo**:
+
+```bash
+cat > ~/.garmin_env << 'EOF'
+GARMIN_EMAIL="tu@email.com"
+GARMIN_PASSWORD="tu_contraseña"
+GARMIN_TOKENSTORE="/home/ubuntu/.garmin_tokens"
+TMB_KCAL="1650"
+# CALORIES_IN="2000"  # descomentar si querés incluir calorías consumidas
+EOF
+chmod 600 ~/.garmin_env
+```
+
+### 4. Instalar rclone
+
+```bash
+curl -s https://rclone.org/install.sh | sudo bash
+```
+
+### 5. Configurar rclone con Google Drive
+
+El servidor no tiene browser, así que la autorización OAuth se hace en la Mac local:
+
+**En la Mac:**
+```bash
+brew install rclone
+rclone authorize "drive"
+# Autorizar en el browser con la cuenta de Google correcta
+# Copiar el token JSON que aparece en la terminal
+```
+
+**En el servidor**, crear `~/.config/rclone/rclone.conf`:
+```ini
+[gdrive]
+type = drive
+scope = drive
+token = {"access_token":"...","token_type":"Bearer","refresh_token":"...","expiry":"..."}
+team_drive =
+```
+
+Verificar acceso:
+```bash
+rclone lsd gdrive:
+rclone lsd "gdrive:Development/nutrition-garmin-data"
+```
+
+---
+
+## Script del servidor
+
+`run_garmin_server.sh` hace tres cosas:
+1. Carga las credenciales desde `~/.garmin_env`
+2. Corre `garmin_daily.py` y genera el JSON
+3. Sube el JSON a Google Drive con rclone
+
+Los logs quedan en `~/logs/garmin_daily.log`.
+
+Para correr manualmente:
+```bash
+bash ~/nutrition-garmin-data/run_garmin_server.sh           # hoy
+bash ~/nutrition-garmin-data/run_garmin_server.sh 2026-06-05  # fecha específica
+```
+
+---
+
+## Cron — ejecución automática
+
+Corre todos los días a las **11pm hora Uruguay (02:00 UTC)**.
+
+Ver cron activo:
+```bash
+crontab -l
+```
+
+Configuración actual:
+```
+0 2 * * * /bin/bash /home/ubuntu/nutrition-garmin-data/run_garmin_server.sh >> /home/ubuntu/logs/garmin_cron.log 2>&1
+```
+
+Editar horario:
+```bash
+crontab -e
+```
+
+> **Nota de timezone:** El servidor corre en UTC. Uruguay es UTC-3, por eso 11pm Uruguay = 02:00 UTC.
+> No usar la timezone de Frankfurt aunque AWS diga que el servidor está ahí — el servidor está configurado en UTC.
+
+---
+
+## Seguridad
+
+### UFW (firewall de Linux)
+
+Solo permite entrada por SSH (puerto 22). Todo lo demás bloqueado.
+
+```bash
+# Ver estado
+sudo ufw status verbose
+
+# Si por alguna razón está inactivo, reactivar:
+sudo ufw default deny incoming
+sudo ufw default allow outgoing
+sudo ufw allow 22/tcp
+sudo ufw --force enable
+```
+
+**Auto-start al reiniciar:** ✅ habilitado (`systemctl is-enabled ufw`)
+
+### fail2ban
+
+Bloquea IPs que fallen SSH 3 veces en 10 minutos. Ban de 24 horas.
+
+Configuración en `/etc/fail2ban/jail.local`:
+```ini
+[DEFAULT]
+bantime  = 1h
+findtime = 10m
+maxretry = 5
+
+[sshd]
+enabled  = true
+port     = ssh
+maxretry = 3
+bantime  = 24h
+```
+
+```bash
+# Ver estado
+sudo fail2ban-client status sshd
+
+# Ver IPs baneadas
+sudo fail2ban-client status sshd | grep "Banned IP"
+```
+
+**Auto-start al reiniciar:** ✅ habilitado (`systemctl is-enabled fail2ban`)
+
+> **Nota de instalación:** Ubuntu 22.04 con Python 3.12 no es compatible con fail2ban 0.11.2 del repositorio oficial de apt (`asynchat` removido en Python 3.12). Se instaló fail2ban 1.1.0 desde el [repositorio oficial de GitHub](https://github.com/fail2ban/fail2ban/releases/tag/1.1.0) copiando los archivos manualmente.
+
+### SSH
+
+- Autenticación por contraseña: **deshabilitada** (`/etc/ssh/sshd_config.d/60-cloudimg-settings.conf`)
+- Solo entra con el archivo `.pem`
+- Root login: prohibido
+
+### Puertos expuestos
+
+| Puerto | Servicio | Acceso |
+|---|---|---|
+| 22 | SSH | Solo con `.pem` |
+| 53682 | rclone OAuth | Solo `127.0.0.1` — no accesible desde fuera |
+
+### ⚠️ Deuda pendiente
+- [ ] Revisar y auditar el firewall de instancia en la consola de AWS Lightsail (verificar que no haya puertos abiertos innecesariamente a nivel de AWS, más allá del UFW de Linux)
+
+---
+
+## Al reiniciar el servidor
+
+Todo arranca automáticamente. No se requiere intervención manual.
+
+| Servicio | Auto-start |
+|---|---|
+| UFW | ✅ enabled |
+| fail2ban | ✅ enabled |
+| cron (tarea 11pm) | ✅ enabled |
+
+Verificar después de un reinicio:
+```bash
+sudo systemctl is-enabled ufw fail2ban cron
+sudo ufw status
+sudo fail2ban-client status sshd
+crontab -l
+```
+
+---
+
+## Actualizar el script
+
+Cuando haya cambios en el repo:
+```bash
+cd ~/nutrition-garmin-data && git pull
+```
+
+El cron ya apunta al archivo local, no hace falta tocar nada más.

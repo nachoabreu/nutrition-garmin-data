@@ -129,11 +129,13 @@ def main():
         log("Fuera de la ventana horaria — esperando próxima verificación")
         return
 
-    log(f"✅ Dentro de la ventana — ejecutando garmin_daily.py")
+    # Usar la fecha LOCAL (no la del servidor en UTC)
+    local_date = local_dt.strftime("%Y-%m-%d")
+    log(f"✅ Dentro de la ventana — ejecutando garmin_daily.py para fecha local {local_date}")
     mark_ran_today()
 
     result = subprocess.run(
-        ["python3", str(SCRIPT_DIR / "garmin_daily.py")],
+        ["python3", str(SCRIPT_DIR / "garmin_daily.py"), local_date],
         env={**os.environ},
         capture_output=True,
         text=True,
@@ -150,8 +152,8 @@ def main():
         LOCKFILE.unlink(missing_ok=True)
         return
 
-    # Subir JSON a Drive
-    run_date = date.today().isoformat()
+    # Subir JSON a Drive (usar fecha local, no UTC del servidor)
+    run_date = local_date
     json_file = SCRIPT_DIR / f"garmin_{run_date}.json"
     if json_file.exists():
         upload = subprocess.run(

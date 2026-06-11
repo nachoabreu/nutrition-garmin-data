@@ -24,6 +24,85 @@ ssh -i ~/.ssh/nacho-lightsail-operator-mac.pem ubuntu@63.178.52.9
 
 ---
 
+## Agregar un usuario nuevo
+
+Solo 3 pasos. No hay que tocar código.
+
+### 1. Crear la carpeta y config del usuario
+
+```bash
+mkdir -p ~/.garmin_users/<nombre>/garmin_tokens
+chmod 700 ~/.garmin_users/<nombre>
+
+cat > ~/.garmin_users/<nombre>/config.env << 'EOF'
+USER_NAME="<nombre>"
+GARMIN_EMAIL="email@ejemplo.com"
+GARMIN_PASSWORD="contraseña"
+GARMIN_TOKENSTORE="/home/ubuntu/.garmin_users/<nombre>/garmin_tokens"
+DRIVE_PATH="gdrive_<nombre>:Carpeta/subcarpeta"
+TMB_KCAL="1650"
+ACTIVE="true"
+# CALORIES_IN="2000"
+EOF
+chmod 600 ~/.garmin_users/<nombre>/config.env
+```
+
+### 2. Autorizar su Google Drive con rclone
+
+En la Mac local:
+```bash
+rclone authorize "drive"
+# El usuario autoriza en el browser con SU cuenta de Google
+# Copiar el token JSON que aparece
+```
+
+En el servidor, agregar al final de `~/.config/rclone/rclone.conf`:
+```ini
+[gdrive_<nombre>]
+type = drive
+scope = drive
+token = {"access_token":"...","refresh_token":"...","expiry":"..."}
+team_drive =
+```
+
+Verificar:
+```bash
+rclone lsd gdrive_<nombre>:
+```
+
+### 3. Probar
+
+```bash
+bash ~/nutrition-garmin-data/run_garmin_server.sh <nombre> 2026-06-01
+```
+
+A partir de ese momento el cron lo levanta automáticamente junto a todos los demás usuarios.
+
+### Pausar un usuario sin borrarlo
+
+```bash
+# Editar su config.env y cambiar:
+ACTIVE="false"
+```
+
+### Estructura de archivos por usuario
+
+```
+~/.garmin_users/
+    nacho/
+        config.env          # credenciales + config (chmod 600)
+        garmin_tokens/      # tokens de sesión Garmin (aislados)
+    otro_usuario/
+        config.env
+        garmin_tokens/
+
+~/logs/
+    nacho/garmin.log        # log separado por usuario
+    otro_usuario/garmin.log
+```
+
+---
+
 ## Instalación
 
 ### 1. Clonar el repo
